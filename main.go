@@ -15,54 +15,58 @@ var (
 )
 
 func watchXkb(conn *x.Conn) {
+	xkbLogger := logrus.WithField("module", "xkb")
 	eventChan := make(chan x.GenericEvent)
 	conn.AddEventChan(eventChan)
 
 	for {
 		event, ok := <-eventChan
 		if !ok {
-			logrus.Error("xkb channel error")
+			xkbLogger.Error("xkb channel error")
 			return
 		}
 
 		stateEvent, err := xkb.NewStateNotifyEvent(event)
 		if err != nil {
-			logrus.Error(err)
+			xkbLogger.Error(err)
 		}
+		xkbLogger.WithFields(logrus.Fields{"id": currentWindow, "group": stateEvent.LockedGroup}).Info("layout changed")
 		layouts[currentWindow] = stateEvent.LockedGroup
 	}
 }
 
 func main() {
-	logFile, err := os.OpenFile("/var/log/i3xkb", os.O_CREATE|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile("/var/log/i3xkb", os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		logrus.Error(err)
 	} else {
 		logrus.SetOutput(logFile)
 	}
+	i3Logger := logrus.WithField("module", "i3")
+	xkbLogger := logrus.WithField("module", "xkb")
 
 	layouts = make(map[i3.NodeID]uint8)
 	i3ER := i3.Subscribe(i3.WindowEventType)
 
 	conn, err := x.NewConn()
 	if err != nil {
-		logrus.Panic(err)
+		xkbLogger.Panic(err)
 	}
 
 	useExtCookie := xkb.UseExtension(conn, xkb.MajorVersion, xkb.MinorVersion)
 	_, err = useExtCookie.Reply(conn)
 	if err != nil {
-		logrus.Panic(err)
+		xkbLogger.Panic(err)
 	}
 
 	selectOpts := xkb.SelectDetail(xkb.EventTypeStateNotify, map[uint]bool{1 << 7: true})
 	if err := xkb.SelectEventsChecked(conn, xkb.IDUseCoreKbd, selectOpts).Check(conn); err != nil {
-		logrus.Panic(err)
+		xkbLogger.Panic(err)
 	}
 
 	itree, err := i3.GetTree()
 	if err != nil {
-		logrus.Error(err)
+		i3Logger.Error(err)
 		currentWindow = 0
 	} else {
 		currentWindow = itree.Root.FindFocused(func(n *i3.Node) bool { return n.Focused }).ID
@@ -74,13 +78,18 @@ func main() {
 		event := i3ER.Event().(*i3.WindowEvent)
 		switch event.Change {
 		case "new":
+			i3Logger.WithField("id", event.Container.ID).Info("new")
 			layouts[event.Container.ID] = layouts[currentWindow]
 		case "focus":
+			i3Logger.WithField("id", event.Container.ID).Info("focus")
 			currentWindow = event.Container.ID
 			if err := xkb.LatchLockStateChecked(conn, xkb.IDUseCoreKbd, 0, 0, true, layouts[currentWindow], 0, 0, false, 0).Check(conn); err != nil {
-				logrus.Error(err)
+				xkbLogger.WithField("id", currentWindow).Error(err)
+			} else {
+				xkbLogger.WithFields(logrus.Fields{"id": currentWindow, "group": layouts[currentWindow]}).Info("layout changed")
 			}
 		case "close":
+			i3Logger.WithField("id", event.Container.ID).Info("close")
 			delete(layouts, event.Container.ID)
 		}
 	}
