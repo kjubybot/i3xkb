@@ -36,7 +36,7 @@ func watchXkb(conn *x.Conn) {
 }
 
 func main() {
-	logFile, err := os.OpenFile("/var/log/i3xkb", os.O_CREATE|os.O_TRUNC, 0644)
+	logFile, err := os.OpenFile("/var/log/i3xkb", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		logrus.Error(err)
 	} else {
@@ -46,7 +46,7 @@ func main() {
 	xkbLogger := logrus.WithField("module", "xkb")
 
 	layouts = make(map[i3.NodeID]uint8)
-	i3ER := i3.Subscribe(i3.WindowEventType)
+	i3ER := i3.Subscribe(i3.WindowEventType, i3.ShutdownEventType)
 
 	conn, err := x.NewConn()
 	if err != nil {
@@ -75,22 +75,28 @@ func main() {
 	go watchXkb(conn)
 
 	for i3ER.Next() {
-		event := i3ER.Event().(*i3.WindowEvent)
-		switch event.Change {
-		case "new":
-			i3Logger.WithField("id", event.Container.ID).Info("new")
-			layouts[event.Container.ID] = layouts[currentWindow]
-		case "focus":
-			i3Logger.WithField("id", event.Container.ID).Info("focus")
-			currentWindow = event.Container.ID
-			if err := xkb.LatchLockStateChecked(conn, xkb.IDUseCoreKbd, 0, 0, true, layouts[currentWindow], 0, 0, false, 0).Check(conn); err != nil {
-				xkbLogger.WithField("id", currentWindow).Error(err)
-			} else {
-				xkbLogger.WithFields(logrus.Fields{"id": currentWindow, "group": layouts[currentWindow]}).Info("layout changed")
+		switch i3ER.Event().(type) {
+		case *i3.WindowEvent:
+			event := i3ER.Event().(*i3.WindowEvent)
+			switch event.Change {
+			case "new":
+				i3Logger.WithField("id", event.Container.ID).Info("new")
+				layouts[event.Container.ID] = layouts[currentWindow]
+			case "focus":
+				i3Logger.WithField("id", event.Container.ID).Info("focus")
+				currentWindow = event.Container.ID
+				if err := xkb.LatchLockStateChecked(conn, xkb.IDUseCoreKbd, 0, 0, true, layouts[currentWindow], 0, 0, false, 0).Check(conn); err != nil {
+					xkbLogger.WithField("id", currentWindow).Error(err)
+				} else {
+					xkbLogger.WithFields(logrus.Fields{"id": currentWindow, "group": layouts[currentWindow]}).Info("layout changed")
+				}
+			case "close":
+				i3Logger.WithField("id", event.Container.ID).Info("close")
+				delete(layouts, event.Container.ID)
 			}
-		case "close":
-			i3Logger.WithField("id", event.Container.ID).Info("close")
-			delete(layouts, event.Container.ID)
+		case *i3.ShutdownEvent:
+			i3Logger.Info("session shutdown")
+			return
 		}
 	}
 }
