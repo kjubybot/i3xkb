@@ -1,8 +1,6 @@
 package main
 
 import (
-	"os"
-
 	x "github.com/linuxdeepin/go-x11-client"
 	xkb "github.com/linuxdeepin/go-x11-client/ext/xkb"
 	"github.com/sirupsen/logrus"
@@ -36,12 +34,6 @@ func watchXkb(conn *x.Conn) {
 }
 
 func main() {
-	logFile, err := os.OpenFile("/var/log/i3xkb", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		logrus.Error(err)
-	} else {
-		logrus.SetOutput(logFile)
-	}
 	i3Logger := logrus.WithField("module", "i3")
 	xkbLogger := logrus.WithField("module", "xkb")
 
