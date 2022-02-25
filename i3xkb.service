@@ -2,7 +2,7 @@
 Description=i3xkb layout changer
 
 [Service]
-ExecStart=/home/kjubybot/go/bin/i3xkb
+ExecStart=GOPATH/bin/i3xkb
 Slice=session.slice
 
 [Install]
