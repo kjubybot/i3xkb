@@ -3,6 +3,8 @@ Description=i3xkb layout changer
 
 [Service]
 ExecStart=GOPATH/bin/i3xkb
+Restart=always
+RestartSec=1s
 Slice=session.slice
 
 [Install]
